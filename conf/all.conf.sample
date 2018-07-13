@@ -53,10 +53,7 @@ dest_dir=/mnt/data/
 dest_dir_remote_bak=192.168.3.101:/share/yanfeng/scale_io/
 test_disks=/dev/scinia,/dev/scinia,/dev/scinia
 
-rbd_num_per_client=1,1,1
-=======
 disk_num_per_client=40,40
->>>>>>> start to working on Config checking and setting
 
 #====================RGW CONFIGURATION===================
 # cosbench

@@ -44,16 +44,18 @@ function create_rbd_volume {
         for i in `seq 1 $need_to_create`
         do
 	    volume="volume-"`uuidgen`
-            rbd create -p $rbd_pool --size=${volume_size} --image-format=2 --image-feature=layering $volume
+            rbd create -p $rbd_pool --size=${volume_size} --image-format=2 --image-feature=layering $volume &
         done
+        wait
     fi
 }
 
 function rm_rbd_volume {
     rbd -p $rbd_pool ls | while read volume
     do
-        rbd -p $rbd_pool rm $volume
+        rbd -p $rbd_pool rm $volume &
     done
+    wait
 }
 
 function get_secret {

@@ -175,10 +175,13 @@ class Benchmark(object):
         head = self.cluster["head"]
         monitor_interval = self.cluster["monitoring_interval"]
         #nodes.extend(self.benchmark["distribution"].keys())
-        common.pdsh(user, nodes, "sync && echo '%s' > /proc/sys/vm/drop_caches" % self.cluster["cache_drop_level"])
+        common.pdsh(user, nodes, "sync && echo '%s' | sudo tee /proc/sys/vm/drop_caches" % self.cluster["cache_drop_level"])
+
+        #Create temp directory
+        common.pdsh(user, nodes, "mkdir -p %s" % dest_dir)
 
         #send command to ceph cluster
-        common.pdsh(user, nodes, "for i in `seq 1 %d`;do echo `date \"+%s\"` `ceph health` >> %s/`hostname`_ceph_health.txt; sleep %s;done" % (time_tmp/int(monitor_interval)+1, "%Y_%m_%d %H:%M:%S", dest_dir, monitor_interval), option="force")
+        common.pdsh(user, nodes, "echo $$ > %s/ceph_health.pid; for i in `seq 1 %d`;do echo `date \"+%s\"` `ceph health` >> %s/`hostname`_ceph_health.txt; sleep %s;done" % (dest_dir, time_tmp/int(monitor_interval)+1, "%Y_%m_%d %H:%M:%S", dest_dir, monitor_interval), option="force")
         common.pdsh(user, nodes, "ps aux | grep ceph-osd | grep -v 'grep' > %s/`hostname`_ps.txt" % (dest_dir))
         common.pdsh(user, nodes, "date > %s/`hostname`_process_log.txt" % (dest_dir))
         common.printout("LOG","Start system data collector under %s " % nodes)
@@ -191,8 +194,10 @@ class Benchmark(object):
         if "perfcounter" in self.cluster["collector"]:
             common.printout("LOG","Start perfcounter data collector under %s " % nodes)
             self.create_admin_daemon_dump_script(dest_dir, time_tmp, monitor_interval)
+            scps = {}
             for node in nodes:
-                common.scp(user, node, "ceph_admin.bash", dest_dir);
+                common.scp(user, node, "ceph_admin.bash", dest_dir, scps);
+            common.wait_all_subp(scps, "{} nodes still copying", check_return=False)
             common.pdsh(user, nodes, "echo `date +%s`' perfcounter start' >> %s/`hostname`_process_log.txt; bash %s/ceph_admin.bash; echo `date +%s`' perfcounter stop' >> %s/`hostname`_process_log.txt; rm -rf %s/ceph_admin.bash" % ('%s', dest_dir, dest_dir, '%s', dest_dir, dest_dir), option="force")
         if "blktrace" in self.cluster["collector"]:
             for node in nodes:
@@ -237,6 +242,7 @@ class Benchmark(object):
 
         #2. send command to client
         nodes = self.benchmark["distribution"].keys()
+        common.pdsh(user, nodes, "mkdir -p %s" % dest_dir)
         common.pdsh(user, nodes, "for i in `seq 1 %d`;do echo `date \"+%s\"` `ceph health` >> %s/`hostname`_ceph_health.txt; sleep %s;done" % (time_tmp/int(monitor_interval)+1, "%Y_%m_%d %H:%M:%S", dest_dir, monitor_interval), option="force")
         common.pdsh(user, nodes, "date > %s/`hostname`_process_log.txt" % (dest_dir))
         common.printout("LOG","Start system data collector under %s " % nodes)
@@ -251,8 +257,10 @@ class Benchmark(object):
         if "perfcounter" in self.cluster["collector"]:
             common.printout("LOG","Start perfcounter data collector under %s " % nodes)
             self.create_admin_daemon_dump_script(dest_dir, time_tmp, monitor_interval)
+            scps = {}
             for node in nodes:
-                common.scp(user, node, "ceph_admin.bash", dest_dir);
+                common.scp(user, node, "ceph_admin.bash", dest_dir, scps);
+            common.wait_all_subp(scps, "{} nodes still copying ceph_admin.bash", check_return=False)
             common.pdsh(user, nodes, "echo `date +%s`' perfcounter start' >> %s/`hostname`_process_log.txt; bash %s/ceph_admin.bash; echo `date +%s`' perfcounter stop' >> %s/`hostname`_process_log.txt; rm -rf %s/ceph_admin.bash" % ('%s', dest_dir, dest_dir, '%s', dest_dir, dest_dir), option="force")
 
     def archive(self):
@@ -281,28 +289,32 @@ class Benchmark(object):
         #write description to dir
         with open( "%s/conf/description" % dest_dir, 'w+' ) as f:
             f.write( self.benchmark["description"] )
+
+        scps = {}
         #collect osd data
         for node in self.cluster["osd"]:
             common.bash("mkdir -p %s/raw/%s" % (dest_dir, node))
-            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"])
-            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.csv" % self.cluster["tmp_dir"])
-            common.rscp(user, node, "%s/conf/" % (dest_dir), "%s/*.csv" % self.cluster["tmp_dir"])
+            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"], scps)
+            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.csv" % self.cluster["tmp_dir"], scps)
+            common.rscp(user, node, "%s/conf/" % (dest_dir), "%s/*.csv" % self.cluster["tmp_dir"], scps)
             if "blktrace" in self.cluster["collector"]:
-                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*blktrace*" % self.cluster["tmp_dir"])
+                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*blktrace*" % self.cluster["tmp_dir"], scps)
             if "lttng" in self.cluster["collector"]:
-                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/lttng-traces" % self.cluster["tmp_dir"])
+                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/lttng-traces" % self.cluster["tmp_dir"], scps)
 
         #collect client data
         for node in self.benchmark["distribution"].keys():
             common.bash( "mkdir -p %s/raw/%s" % (dest_dir, node))
-            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"])
-            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.csv" % self.cluster["tmp_dir"])
-            common.rscp(user, node, "%s/conf/" % (dest_dir), "%s/*.csv" % self.cluster["tmp_dir"])
+            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"], scps)
+            common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.csv" % self.cluster["tmp_dir"], scps)
+            common.rscp(user, node, "%s/conf/" % (dest_dir), "%s/*.csv" % self.cluster["tmp_dir"], scps)
 
         #collect head timestamp
         if head not in self.benchmark["distribution"].keys():
             common.bash("mkdir -p %s/raw/%s" % (dest_dir, head))
-            common.rscp(user, head, "%s/raw/%s" % (dest_dir, head), "%s/%s_process_log.txt" % (self.cluster["tmp_dir"], head))
+            common.rscp(user, head, "%s/raw/%s" % (dest_dir, head), "%s/%s_process_log.txt" % (self.cluster["tmp_dir"], head), scps)
+
+        common.wait_all_subp(scps, "{} files still copying", check_return=False)
 
         #save real runtime
         if self.real_runtime:
@@ -318,6 +330,7 @@ class Benchmark(object):
         user = self.cluster["user"]
         nodes = self.cluster["osd"]
         dest_dir = self.cluster["tmp_dir"]
+        common.pdsh(user, nodes, "mkdir -p %s" % dest_dir)
         if "lttng" in self.cluster["collector"]:
             common.pdsh(user, nodes, "export HOME=%s; lttng stop; lttng destroy;" % dest_dir, option = "check_return")
         if "perfcounter" in self.cluster["collector"]:
@@ -326,6 +339,7 @@ class Benchmark(object):
         common.pdsh(user, nodes, "killall -9 sar; echo `date +%s`' sar stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 iostat; echo `date +%s`' iostat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 mpstat; echo `date +%s`' mpstat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
+        common.pdsh(user, nodes, "[ -f %s/ceph_health.pid ] && [[ \"`cat %s/ceph_health.pid`\" =~ ^[0-9]+$ ]] && kill `cat %s/ceph_health.pid`; rm -f %s/ceph_health.pid" % (dest_dir, dest_dir, dest_dir, dest_dir), option = "check_return")
         if "fatrace" in self.cluster["collector"]:
             common.pdsh(user, nodes, "killall -9 fatrace;", option = "check_return")
         common.pdsh(user, nodes, "cat /proc/interrupts > %s/`hostname`_interrupts_end.txt; echo `date +%s`' interrupt stop' >> %s/`hostname`_process_log.txt" % (dest_dir, '%s', dest_dir))
@@ -336,12 +350,14 @@ class Benchmark(object):
 
         #2. send command to client
         nodes = self.benchmark["distribution"].keys()
+        common.pdsh(user, nodes, "mkdir -p %s" % dest_dir)
         if "perfcounter" in self.cluster["collector"]:
             common.pdsh(user, nodes, "echo `date +%s`' perfcounter stop' >> %s/`hostname`_process_log.txt; ps aux | grep ceph_admin | grep -v 'grep' | awk '{print $2}' | while read pid;do kill $pid;done" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 top; echo `date +%s`' top stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 sar; echo `date +%s`' sar stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 iostat; echo `date +%s`' iostat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
         common.pdsh(user, nodes, "killall -9 mpstat; echo `date +%s`' mpstat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
+        common.pdsh(user, nodes, "[ -f %s/ceph_health.pid ] && [[ \"`cat %s/ceph_health.pid`\" =~ ^[0-9]+$ ]] && kill `cat %s/ceph_health.pid`; rm -f %s/ceph_health.pid" % (dest_dir, dest_dir, dest_dir, dest_dir), option = "check_return")
         common.pdsh(user, nodes, "cat /proc/interrupts > %s/`hostname`_interrupts_end.txt; echo `date +%s`' interrupt stop' >> %s/`hostname`_process_log.txt" % (dest_dir, '%s', dest_dir))
 
     def tuning(self):
@@ -465,15 +481,17 @@ class Benchmark(object):
         common.printout("WARNING","Detect no fio job runing" % (fio_node_num, fio_running_node_num),log_level="LVL1")
         return False
 
-    def check_rbd_init_completed(self, planed_space, pool_name="rbd"):
+    def check_rbd_init_completed(self, planed_space):
+        pool_name = self.cluster["rbd_pool"]
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
         user =  self.cluster["user"]
         controller =  self.cluster["head"]
-        stdout, stderr = common.pdsh(user, [controller], "ceph df | grep %s | awk '{print $3}'" % pool_name, option = "check_return")
+        stdout, stderr = common.pdsh(user, [controller], "ceph df | grep %s | awk '{print $3 \" \" $4;}'" % pool_name, option = "check_return")
         res = common.format_pdsh_return(stdout)
         if controller not in res:
             common.printout("ERROR","cannot get ceph space, seems to be a dead error",log_level="LVL1")
             #sys.exit()
+        common.printout("WARNING","Current usage: {}".format(res[controller]))
         cur_space = common.size_to_Kbytes(res[controller])
         planned_space = common.size_to_Kbytes(planed_space)
         common.printout("WARNING","Ceph cluster used data occupied: %s KB, planned_space: %s KB " % (cur_space, planned_space))
@@ -501,6 +519,7 @@ class Benchmark(object):
         self.cluster["head"] = self.all_conf_data.get("head")
         self.cluster["tmp_dir"] = self.all_conf_data.get("tmp_dir")
         self.cluster["dest_dir"] = self.all_conf_data.get("dest_dir")
+        self.cluster["rbd_pool"] = self.all_conf_data.get("rbd_pool")
         self.cluster["client"] = self.all_conf_data.get_list("list_client")
         self.cluster["osd"] = self.all_conf_data.get_list("list_server")
         for node in self.cluster["osd"]:

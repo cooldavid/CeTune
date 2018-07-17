@@ -1,8 +1,8 @@
 import os
 
-apt_pkg_list = ['python-pip','pdsh','unzip','zip','expect','sysstat','curl','openjdk-7-jre','haproxy','python-matplotlib','python-numpy','python-yaml','sqlite']
+apt_pkg_list = ['python-pip','pdsh','unzip','zip','expect','sysstat','curl','openjdk-7-jre','haproxy','python-matplotlib','python-numpy','python-yaml','sqlite','git']
 
-pip_pkg_list = ['ceph-deploy','pyyaml','argparse','markdown2']
+pip_pkg_list = ['ceph-deploy','pyyaml','argparse','markdown2','xlsxwriter']
 #update apt-get
 os.system('sudo apt-get update')
 

@@ -30,7 +30,7 @@ function get_conf {
         conf=$1
     fi 
     line_num=`awk 'BEGIN{line_num = 0}{if(!line_num && $0=="[ceph_conf]")line_num = NR-1}END{if(!line_num)line_num=NR; print line_num}' $conf`
-    head -$line_num $conf > all.conf.tmp
+    head -$line_num $conf | grep -v '|' > all.conf.tmp
     source all.conf.tmp
     rm all.conf.tmp
 }

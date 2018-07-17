@@ -219,7 +219,7 @@ def remote_file_exist( user, node ,path):
     for node, returncode in res.items():
         return int(returncode) == 0
 
-def pdsh(user, nodes, command, option="error_check", except_returncode=0, nodie=False,loglevel="LVL3"):
+def pdsh(user, nodes, command, option="error_check", except_returncode=0, nodie=False, loglevel="LVL3", subps=None):
     _nodes = []
     for node in nodes:
         _nodes.append("%s@%s" % (user, node))
@@ -229,7 +229,15 @@ def pdsh(user, nodes, command, option="error_check", except_returncode=0, nodie=
     printout("CONSOLE", args, screen=False,log_level=loglevel)
 
     _subp = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if "force" in option:
+
+    if isinstance(subps, dict):
+        subps[_subp.pid] = _subp
+        return _subp
+
+    if "forcewait" in option:
+        _subp.wait()
+        return
+    elif "force" in option:
         return _subp
     stdout = []
     for line in iter(_subp.stdout.readline,""):
@@ -320,21 +328,29 @@ def cp(localfile, remotefile):
         print('scp: %s' % args)
         printout("WARNING",stderr+"\n")
 
-def scp(user, node, localfile, remotefile):
+def scp(user, node, localfile, remotefile, jobs=None):
     args = ['scp', '-oConnectTimeout=15', '-r',localfile, '%s@%s:%s' % (user, node, remotefile)]
     printout("CONSOLE", args, screen=False)
     #print('scp: %s' % args)
-    stdout, stderr = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True).communicate()
+    _subp = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+    if jobs != None:
+        jobs[_subp.pid] = _subp
+        return _subp
+    stdout, stderr = _subp.communicate()
     printout("CONSOLE", stdout, screen=False)
     if stderr:
         print('scp: %s' % args)
         printout("WARNING",stderr+"\n")
 
-def rscp(user, node, localfile, remotefile):
+def rscp(user, node, localfile, remotefile, jobs=None):
     args = ['scp', '-oConnectTimeout=15', '-r', '%s@%s:%s' % (user, node, remotefile), localfile]
     printout("CONSOLE", args, screen=False)
     #print('rscp: %s' % args)
-    stdout, stderr = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True).communicate()
+    _subp = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+    if jobs != None:
+        jobs[_subp.pid] = _subp
+        return _subp
+    stdout, stderr = _subp.communicate()
     if stderr:
         print('rscp: %s' % args)
         printout("WARNING",stderr+"\n")
@@ -348,6 +364,18 @@ def rrscp(user, node1, node1_file, node2,node2_file):
         print('scp: %s' % args)
         print bcolors.FAIL + "[ERROR]:"+stderr+"\n" + bcolors.ENDC
         sys.exit()
+
+def wait_all_subp(subps, runningmsg, delay=1, check_return=True):
+    while len(subps) != 0:
+        printout("LOG",runningmsg.format(len(subps)))
+        for pid in subps.keys():
+            if subps[pid].poll() is None:
+                continue
+            returncode = subps[pid].returncode
+            del subps[pid]
+            if check_return and returncode != 0:
+                raise KeyboardInterrupt
+        time.sleep(delay)
 
 def load_yaml_conf(yaml_path):
     with file(yaml_path) as f:
@@ -501,7 +529,7 @@ def remove_unit(data):
 
 def size_to_Kbytes(size, dest_unit='KB', arg=1024.0):
     if not str(size).isdigit():
-        size_s = size.replace('\n','')
+        size_s = str(size).replace('\n','')
         res = re.search('(\d+\.*\d*)\s*(\D*)',size_s)
         space_num = float(res.group(1))
         space_unit = res.group(2).strip()
@@ -643,7 +671,12 @@ def get_ceph_health(user, node):
     if len(res):
         stdout = res[node]
         output["ceph_status"] = stdout['health']['overall_status']
-        output["detail"] = stdout['health']['checks']
+        if 'detail' in stdout['health']:
+            output["detail"] = stdout['health']['detail']
+        elif 'checks' in stdout['health']:
+            output["detail"] = stdout['health']['checks']
+        else:
+            output["detail"] = []
         if "write_bytes_sec" in stdout['pgmap']:
             str_wb = str(stdout['pgmap']['write_bytes_sec'] / 1024 / 1024) + ' MB/s wr, '
             str_rop = '0 op/s rd, ' if stdout['pgmap']['read_op_per_sec'] == 0 else str(stdout['pgmap']['read_op_per_sec'] / 1024) + ' kop/s rd, '
@@ -661,13 +694,19 @@ def try_ssh( node ):
         return False
 
 def try_disk( node, disk ):
-    stdout = bash("timeout 5 ssh %s 'df %s > /dev/null'; echo $?" % (node, disk))
+    if disk == "":
+        return True
+    stdout = bash("timeout 5 ssh %s '[ -b %s ]'; echo $?" % (node, disk))
     if stdout.strip() == "0":
-        stdout = bash("ssh %s mount -l | grep boot | awk '{print $1}'" % node)
-        if disk == stdout.strip():
+        bootdisk = bash("ssh %s mount -l | grep boot | awk '{print $1}'" % node).strip()
+        if bootdisk != "" and disk == bootdisk:
+            return False
+        rootdisk = bash("ssh %s mount -l | grep ' on / type' | awk '{print $1}'" % node).strip()
+        if rootdisk != "" and disk == rootdisk:
             return False
         return True
     else:
+        printout("ERROR", "disk {} df check error on node {}!".format(disk, node))
         return False
 
 def parse_nvme( dev_name ):

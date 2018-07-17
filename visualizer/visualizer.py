@@ -419,7 +419,7 @@ class Visualizer:
         for field_column, field_data in data.items():
             pyplot.figure(figsize=(9, 4))
             for node, node_data in field_data.items():
-                pyplot.plot(node_data, label=node)
+                pyplot.plot(node_data, linestyle=' ', marker='.', label=node)
             pyplot.xlabel("time(sec)")
             pyplot.ylabel("%s" % field_column)
             # Shrink current axis's height by 10% on the bottom

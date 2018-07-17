@@ -241,8 +241,10 @@ class Config():
         if key in self.conf_data:
             if re.search(',', self.conf_data[key]):
                 return [x.strip() for x in self.conf_data[key].split(",")]
-            else:
+            elif len(self.conf_data[key].strip()):
                 return [self.conf_data[key].strip()]
+            else:
+                return []
         else:
             print "%s not defined in all.conf" % key
             return []

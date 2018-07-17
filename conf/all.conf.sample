@@ -21,14 +21,16 @@ cpuset_start=0
 vm_num_per_client=40
 # img_path_dir
 img_path_dir=/mnt/images
-# ip_prefix
-ip_prefix=10.10.5
-# ip_fix_start , vm will be created from ip_prefix.if_fix, example: if set ip_prefix = 192.168.9; ip_fix = 201, then the first vm ip will be 192.168.9.201, the second vm should be 192.168.9.202 and so on
-ip_fix=161
-vm_image_locate_server=10.239.158.45
+# vclient_ip_prefix
+vclient_ip_prefix=192.168.9
+# vclient_ip_start , vm will be created from vclient_ip_prefix.vclient_ip_start, example: if set vclient_ip_prefix = 192.168.9; vclient_ip_start = 201, then the first vm ip will be 192.168.9.201, the second vm should be 192.168.9.202 and so on
+vclient_ip_start=201
+vclient_ip_mask=255.255.255.0
+vclient_ip_gw=192.168.9.254
+vm_image_locate_path=10.239.158.45:vclient.img
 #=====================BENCHMARK=====================
 head=wyf01
-tmp_dir=/opt/
+tmp_dir=/CeTune/tmp
 user=root
 list_client=client01
 list_server=aceph01,aceph02,aceph03,aceph04
@@ -39,6 +41,7 @@ aceph04=/dev/sdb1:/dev/sdg1,/dev/sdc1:/dev/sdg2,/dev/sdd1:/dev/sdg3,/dev/sde1:/d
 list_mon=aceph01
 volume_size=40960
 rbd_volume_count=80
+rbd_pool=rbd
 fio_capping=true
 benchmark_engine=generic
 run_vm_num=3
@@ -49,7 +52,7 @@ run_record_size=64k,4k
 run_queue_depth=64,8
 run_warmup_time=0
 run_time=400
-dest_dir=/mnt/data/
+dest_dir=/CeTune/dest
 dest_dir_remote_bak=192.168.3.101:/share/yanfeng/scale_io/
 test_disks=/dev/scinia,/dev/scinia,/dev/scinia
 

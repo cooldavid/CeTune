@@ -36,57 +36,69 @@ class QemuRbd(Benchmark):
         controller =  self.cluster["head"]
         rbd_count = len(self.instance_list)
         rbd_size = self.all_conf_data.get("volume_size")
+        rbd_pool = self.all_conf_data.get("rbd_pool")
         if rbd_count and rbd_size:
-            super(self.__class__, self).create_image(rbd_count, rbd_size, 'rbd')
+            super(self.__class__, self).create_image(rbd_count, rbd_size, rbd_pool)
         else:
             common.printout("ERROR","need to set rbd_volume_count and volune_size in all.conf",log_level="LVL1")
 
         #create image xml
-        common.printout("LOG","create rbd volume vm attach xml")
-        common.scp(user, controller, "%s/vm-scripts" % (self.pwd), "/opt/");
-        common.scp(user, controller, "%s/conf" % (self.pwd), "/opt/");
-        common.pdsh(user, [controller], "cd /opt/vm-scripts; echo 3 | bash create-volume.sh create_disk_xml", "check_return")
-        common.rscp(user, controller, "%s/vm-scripts/" % (self.pwd), "/opt/vm-scripts/vdbs/");
-        common.printout("LOG","Distribute vdbs xml")
-        for client in self.cluster["testjob_distribution"]:
-            common.scp(user, client, "../vm-scripts/vdbs", dest_dir)
+        #common.printout("LOG","create rbd volume vm attach xml")
+        #common.scp(user, controller, "%s/vm-scripts" % (self.pwd), "/opt/");
+        #common.scp(user, controller, "%s/conf" % (self.pwd), "/opt/");
+        #common.pdsh(user, [controller], "cd /opt/vm-scripts; echo 3 | bash create-volume.sh create_disk_xml", "check_return")
+        #common.rscp(user, controller, "%s/vm-scripts/" % (self.pwd), "/opt/vm-scripts/vdbs/");
+        #common.printout("LOG","Distribute vdbs xml (testjob_distribution={})".format(self.cluster["testjob_distribution"]))
+        #for client in self.cluster["testjob_distribution"]:
+        #    common.scp(user, client, "../vm-scripts/vdbs", dest_dir)
 
         #attach to vm
-        self.attach_images(self.cluster["testjob_distribution"])
+        #self.attach_images(self.cluster["testjob_distribution"])
 
         #start to init 
         fio_job_num_total = 0
         nodes = []
+        scps = {}
+        fios = {}
         for client in self.cluster["testjob_distribution"]:
             vclients = self.cluster["testjob_distribution"][client]
             for vclient in vclients:
-                common.scp(user, vclient, "../conf/fio_init.conf", dest_dir)
-                common.pdsh(user, [vclient], "fio --output %s/`hostname`_fio.txt --section init-write-vdb %s/fio_init.conf > /dev/null" % (dest_dir, dest_dir), option = "force")
-            fio_job_num_total += len(self.cluster["testjob_distribution"][client])
+                common.scp(user, vclient, "../conf/fio_init.conf", dest_dir, scps)
             nodes.extend(vclients)
-        time.sleep(1)
-        if not self.check_fio_pgrep(nodes, fio_job_num_total, check_type = "nodenum"):
-            common.printout("ERROR","Failed to start FIO process",log_level="LVL1")
-            common.pdsh(user, nodes, "killall -9 fio", option = "check_return")
+        try:
+            common.wait_all_subp(scps, "{} fio configurations still copying")
+        except KeyboardInterrupt:
+            common.printout("ERROR","Failed to copy fio configurations")
+            common.wait_all_subp(scps, "Waiting remaining {} fio configurations copy", check_return=False)
+            raise KeyboardInterrupt
+
+        for vclient in nodes:
+            fiop = common.pdsh(user, [vclient], "fio --output %s/`hostname`_fio.txt --section init-write-vdb %s/fio_init.conf > /dev/null" % (dest_dir, dest_dir), option="force")
+            fios[fiop.pid]=fiop
+
+        fio_job_num_total = len(nodes)
+
+        if len(fios) != len(nodes):
             raise KeyboardInterrupt
         if not fio_job_num_total:
             common.printout("ERROR","Planed to run 0 Fio Job, please check all.conf",log_level="LVL1")
             raise KeyboardInterrupt
-        common.printout("LOG","FIO Jobs starts on %s" % (nodes))
 
-        common.printout("LOG","Wait rbd initialization stop")
+        common.printout("LOG","RBD initialization jobs started on %s" % (nodes))
         #wait fio finish
         try:
-            while self.check_fio_pgrep(nodes):
-                time.sleep(5)
+            common.wait_all_subp(fios, "{} RBD initialization jobs still running", delay=5)
         except KeyboardInterrupt:
-            common.printout("WARNING","Caught KeyboardInterrupt, stop check fio pgrep.",log_level="LVL1")
-            common.pdsh(user, nodes, "killall -9 fio", option = "check_return")
-        common.printout("LOG","rbd initialization finished")
+            common.printout("WARNING","Caught KeyboardInterrupt, fio init failed.",log_level="LVL1")
+            common.pdsh(user, nodes, "killall -9 fio", option = "forcewait")
+            common.wait_all_subp(fios, "Waiting {} remaining RBD initialization jobs", check_return=False)
+            raise KeyboardInterrupt
+        common.printout("LOG","RBD initialization finished")
 
     def prerun_check(self):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
         super(self.__class__, self).prerun_check()
+
         #1. check is vclient alive
         user = self.cluster["user"]
         vdisk = self.benchmark["vdisk"]
@@ -165,24 +177,25 @@ class QemuRbd(Benchmark):
         common.pdsh(user, nodes, "iostat -p -dxm %s > %s/`hostname`_iostat.txt & echo `date +%s`' iostat start' >> %s/`hostname`_process_log.txt" % (monitor_interval, dest_dir, '%s', dest_dir))
         common.pdsh(user, nodes, "sar -A %s > %s/`hostname`_sar.txt & echo `date +%s`' sar start' >> %s/`hostname`_process_log.txt" % (monitor_interval, dest_dir, '%s', dest_dir))
 
-        fio_job_num_total = 0
+        fios = {}
         for node in nodes:
-            common.pdsh(user, [node], "fio --output %s/`hostname`_fio.txt --section %s %s/fio.conf 2>%s/`hostname`_fio_errorlog.txt > /dev/null" % (dest_dir, self.benchmark["section_name"], dest_dir, dest_dir), option = "force")
-            fio_job_num_total += 1
+            fiop = common.pdsh(user, [node], "fio --output %s/`hostname`_fio.txt --section %s %s/fio.conf 2>%s/`hostname`_fio_errorlog.txt > /dev/null" % (dest_dir, self.benchmark["section_name"], dest_dir, dest_dir), option = "force")
+            fios[fiop.pid] = fiop
 
         self.chkpoint_to_log("fio start")
-        time.sleep(5)
-        if not self.check_fio_pgrep(nodes, fio_job_num_total, check_type = "nodenum"):
-            common.printout("ERROR","Failed to start FIO process",log_level="LVL1")
-            raise KeyboardInterrupt
-        if not fio_job_num_total:
+        if len(fios) == 0:
             common.printout("ERROR","Planned to start 0 FIO process, seems to be an error",log_level="LVL1")
             raise KeyboardInterrupt
 
         common.printout("LOG","FIO Jobs starts on %s" % str(nodes))
 
-        while self.check_fio_pgrep(nodes):
-            time.sleep(5)
+        try:
+            common.wait_all_subp(fios, "{} fio jobs still running", delay=5)
+        except KeyboardInterrupt:
+            common.printout("WARNING","Caught KeyboardInterrupt, fio job failed.",log_level="LVL1")
+            common.pdsh(user, nodes, "killall -9 fio", option = "forcewait")
+            common.wait_all_subp(fios, "Waiting {} remaining fio jobs", check_return=False)
+            raise KeyboardInterrupt
 
     def chkpoint_to_log(self, log_str):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
@@ -211,9 +224,17 @@ class QemuRbd(Benchmark):
         user = self.cluster["user"]
         dest_dir = self.cluster["tmp_dir"]
         common.printout("LOG","Prepare_run: distribute fio.conf to vclient")
+        scps = {}
         for client in self.benchmark["distribution"]:
             for vclient in self.benchmark["distribution"][client]:
-                common.scp(user, vclient, "../conf/fio.conf", self.cluster["tmp_dir"])
+                common.scp(user, vclient, "../conf/fio.conf", self.cluster["tmp_dir"], scps)
+        try:
+            common.wait_all_subp(scps, "{} fio configurations still copying")
+        except KeyboardInterrupt:
+            common.printout("ERROR","Failed to copy fio configurations")
+            common.wait_all_subp(scps, "Waiting remaining {} fio configurations copy", check_return=False)
+            sys.exit()
+
         self.cleanup()
     
     def wait_workload_to_stop(self):
@@ -236,25 +257,36 @@ class QemuRbd(Benchmark):
         super(self.__class__, self).stop_data_collecters()
         user = self.cluster["user"]
         dest_dir = self.cluster["tmp_dir"]
+        killjobs = []
         for client in self.benchmark["distribution"]:
             nodes = self.benchmark["distribution"][client]
-            common.pdsh(user, nodes, "killall -9 sar; echo `date +%s`' sar stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
-            common.pdsh(user, nodes, "killall -9 mpstat; echo `date +%s`' mpstat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
-            common.pdsh(user, nodes, "killall -9 iostat; echo `date +%s`' iostat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
-            common.pdsh(user, nodes, "killall -9 top; echo `date +%s`' top stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "check_return")
+            killjobs.append(common.pdsh(user, nodes, "killall -9 sar; echo `date +%s`' sar stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "force"))
+            killjobs.append(common.pdsh(user, nodes, "killall -9 mpstat; echo `date +%s`' mpstat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "force"))
+            killjobs.append(common.pdsh(user, nodes, "killall -9 iostat; echo `date +%s`' iostat stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "force"))
+            killjobs.append(common.pdsh(user, nodes, "killall -9 top; echo `date +%s`' top stop' >> %s/`hostname`_process_log.txt" % ('%s', dest_dir), option = "force"))
+
+        for kj in killjobs:
+            kj.wait()
+        del killjobs
 
     def stop_workload(self):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
         user = self.cluster["user"]
+        killjobs = []
         for client in self.benchmark["distribution"]:
             nodes = self.benchmark["distribution"][client]
-            common.pdsh(user, nodes, "killall -9 fio", option = "check_return")
+            killjobs.append(common.pdsh(user, nodes, "killall -9 fio", option = "force"))
+
+        for kj in killjobs:
+            kj.wait()
+        del killjobs
+
         common.printout("LOG","Workload stopped, detaching rbd volume from vclient")
         self.chkpoint_to_log("fio stop")
-        try:
-            self.detach_images()
-        except KeyboardInterrupt:
-            common.printout("WARNING","Caught KeyboardInterrupt, stop detaching",log_level="LVL1")
+        #try:
+        #    self.detach_images()
+        #except KeyboardInterrupt:
+        #    common.printout("WARNING","Caught KeyboardInterrupt, stop detaching",log_level="LVL1")
 
     def archive(self):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
@@ -262,11 +294,13 @@ class QemuRbd(Benchmark):
         user = self.cluster["user"]
         head = self.cluster["head"]
         dest_dir = self.cluster["dest_dir"]
+        scps = {}
         for client in self.benchmark["distribution"]:
             nodes = self.benchmark["distribution"][client]
             for node in nodes:
                 common.bash("mkdir -p %s/raw/%s" % (dest_dir, node))
-                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"])
+                common.rscp(user, node, "%s/raw/%s/" % (dest_dir, node), "%s/*.txt" % self.cluster["tmp_dir"], scps)
+        common.wait_all_subp(scps, "{} nodes still copying", check_return=False)
         common.cp("%s/conf/fio.conf" % self.pwd, "%s/conf/" % dest_dir )
         common.cp("/etc/ceph/ceph.conf", "%s/conf/" % dest_dir)
         common.bash("mkdir -p %s/conf/fio_errorlog/;find %s/raw/ -name '*_fio_errorlog.txt' | while read file; do cp $file %s/conf/fio_errorlog/;done" % (dest_dir, dest_dir, dest_dir))

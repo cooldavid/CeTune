@@ -1,6 +1,6 @@
 import os
 
-pkg_list = ['python-pip','unzip','sysstat','curl','openjdk-7-jre','haproxy']
+pkg_list = ['python-pip','unzip','sysstat','curl','openjdk-7-jre','haproxy','libvirt-bin','qemu-kvm']
 
 #update apt-get
 os.system('sudo apt-get update')

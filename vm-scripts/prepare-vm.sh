@@ -134,9 +134,11 @@ function main {
 
     for client in ${clients[@]}; do
         ssh ${client} mkdir -p ${dest_dir} &
-        ssh ${client} "mkdir -p ${img_path_dir}/vmxml" &
+        ssh ${client} "mkdir -p ${img_path_dir}/vmxml"
         scp vclient.tmp.img ${client}:${img_path_dir}/ &
         ssh ${client} "if [ ! -f ~/.ssh/id_rsa.pub ]; then ssh-keygen -t rsa -b 8192 -N '' -f ~/.ssh/id_rsa; fi" &
+        let loopnr=vm_num_per_client*2
+        ssh ${client} "for n in \`seq 1 ${loopnr}\`; do if [ ! -b /dev/loop\${n} ]; then mknod /dev/loop\${n} b 7 \${n}; fi; done" &
     done
     wait
 
@@ -172,6 +174,7 @@ function main {
 
     #===== edit /etc/hosts ======
         ssh ${client} "if [[ \$(grep ${vclient} /etc/hosts) == \"\" ]]; then echo \"${ip} ${vclient}\" >> /etc/hosts; fi"
+        if [[ \$(grep ${vclient} /etc/hosts) == \"\" ]]; then echo \"${ip} ${vclient}\" >> /etc/hosts; fi
 
     #===== advance to next vclient ======
         cpuset=$(( $cpuset + 1 ))

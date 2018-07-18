@@ -503,7 +503,7 @@ class Benchmark(object):
     def create_admin_daemon_dump_script(self, dest_dir, total_count, monitor_interval):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")
         with open('ceph_admin.bash', 'w') as f:
-            f.write("for i in `seq 1 %d`; do find /var/run/ceph -name '*osd*asok' | while read path; do filename=`echo $path | awk -F/ '{print $NF}'`;res_file=%s/`hostname`_${filename}.txt; echo `ceph --admin-daemon $path perf dump`, >> ${res_file} & done; sleep %s; done;" % (total_count, dest_dir, monitor_interval))
+            f.write("for i in `seq 1 %d`; do find /var/run/ceph -name '*osd*asok' | while read path; do filename=`echo $path | awk -F/ '{print $NF}'`;res_file=%s/`hostname`_${filename}.txt; echo `ceph --admin-daemon $path perf dump osd`, >> ${res_file} & done; sleep %s; done;" % (total_count, dest_dir, monitor_interval))
 
     def generate_benchmark_cases(self):
         common.printout("LOG","<CLASS_NAME:%s> Test start running function : %s"%(self.__class__.__name__,sys._getframe().f_code.co_name),screen=False,log_level="LVL4")

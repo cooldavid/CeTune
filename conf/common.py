@@ -706,7 +706,7 @@ def try_disk( node, disk ):
             return False
         return True
     else:
-        printout("ERROR", "disk {} df check error on node {}!".format(disk, node))
+        printout("ERROR", "disk {} block dev check error on node {}!".format(disk, node))
         return False
 
 def parse_nvme( dev_name ):

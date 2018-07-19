@@ -45,11 +45,6 @@ function set_vm_xml {
 }
 
 
-function usage_exit {
-    echo -e "usage:\n\t $0 cpuset_start"
-    exit
-}
-
 function copy_and_patch_image {
     local client=$1
     local vclient=$2
@@ -197,12 +192,8 @@ function main {
     wait
 }
 
-if [ "$#" != "1" ]; then
-    usage_exit
-fi
+cpuset_start=$vclient_cpuset_start
 
-cpuset=$1
-cpuset_start=$cpuset
 . ../conf/common.sh
 get_conf
 

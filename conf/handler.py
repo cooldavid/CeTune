@@ -124,13 +124,21 @@ class ConfigHandler():
     def check_engine(self, engine):
         required = OrderedDict()
         if engine == "qemurbd":
-            required["list_vclient"] = "vclient01,vclient02..."
+            required["img_path_dir"] = "/CeTune/images/"
+            required["vm_img_locate_path"] = "192.168.9.254:vclient.img"
+            required["list_vclient"] = "vclient01,vclient02,vclient03,vclient04,vclient05,vclient06,vclient07,vclient08,vclient09,vclient10,vclient11,vclient12,vclient13,vclient14,vclient15,vclient16,vclient17,vclient18,vclient19,vclient20,vclient21,vclient22,vclient23,vclient24,vclient25,vclient26,vclient27,vclient28,vclient29,vclient30,vclient31,vclient32,vclient33,vclient34,vclient35,vclient36,vclient37,vclient38,vclient39,vclient40,vclient41,vclient42,vclient43,vclient44,vclient45,vclient46,vclient47,vclient48,vclient49,vclient50,vclient51,vclient52,vclient53,vclient54,vclient55,vclient56,vclient57,vclient58,vclient59,vclient60,vclient61,vclient62,vclient63,vclient64,vclient65,vclient66,vclient67,vclient68,vclient69,vclient70,vclient71,vclient72,vclient73,vclient74,vclient75,vclient76,vclient77,vclient78,vclient79,vclient80..."
+            required["vclient_cpuset_start"] = "0"
+            required["vclient_ip_prefix"] = "192.168.9"
+            required["vclient_ip_start"] = "100"
+            required["vclient_ip_mask"] = "255.255.255.0"
+            required["vclient_ip_gw"] = "192.168.9.254"
             required["fio_capping"] = "false"
             required["enable_zipf"] = "false"
             required["fio_randrepeat"] = "false"
             required["volume_size"] = "40960"
             required["rbd_volume_count"] = "1"
-            required["disk_num_per_client"] = "35,35,35,35"
+            required["vm_num_per_client"] = 20
+            required["disk_num_per_client"] = "20,20,20,20"
             required["rwmixread"] = 100
         if engine == "fiorbd":
             required["fio_capping"] = "false"
@@ -207,8 +215,9 @@ class ConfigHandler():
         required_list["benchmark"] = OrderedDict()
         required_list["benchmark"]["disable_tuning_check"] = "false"
         required_list["benchmark"]["distributed_data_process"] = "false"
-        required_list["benchmark"]["tmp_dir"]="/opt/"
-        required_list["benchmark"]["dest_dir"]="/mnt/data/"
+        required_list["benchmark"]["tmp_dir"]="/CeTune/tmp/"
+        required_list["benchmark"]["dest_dir"]="/CeTune/dest/"
+        required_list["benchmark"]["rbd_pool"]="rbd"
         required_list["benchmark"]["cache_drop_level"]=1
         required_list["benchmark"]["monitoring_interval"]=1
         required_list["benchmark"]["collector"]="blktrace,strace,fatrace,lttng,perfcounter"

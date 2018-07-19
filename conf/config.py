@@ -203,6 +203,7 @@ class Config():
         required["cluster_network"] = {"type": "network"}
 
         required["fio_capping"] = {"type":"bool"}
+        required["fio_randrepeat"] = {"type":"bool"}
         required["enable_zipf"] = {"if":"true", "type":"bool", "addition":{"random_distribution":"zipf:1.2"}}
         required["perfcounter_time_precision_level"] = {"type":"int"}
         required["Description"] = {"type":"parameters"}
@@ -211,8 +212,16 @@ class Config():
         required["cosbench_cluster_ip"] = {"type":"ip"}
         required["cosbench_admin_ip"] = {"type":"ip"}
         required["cosbench_network"] = {"type":"network"}
+        required["volume_size"] = {"type":"int"}
+        required["rbd_volume_count"] = {"type":"int"}
+        required["vm_num_per_client"] = {"type":"int"}
         required["disk_num_per_client"] = {"type":"int_list"}
         required["list_vclient"] = {"type":"node_list"}
+        required["vclient_cpuset_start"] = {"type":"int"}
+        required["vclient_ip_prefix"] = {"type":"ip_prefix"}
+        required["vclient_ip_start"] = {"type":"int"}
+        required["vclient_ip_mask"] = {"type":"ip_mask"}
+        required["vclient_ip_gw"] = {"type":"ip"}
         required["monitoring_interval"] = {"type":"int"}
         required["disk_format"] = {"type":"diskformat"}
         required["disable_tuning_check"] = {"type":"bool"}
@@ -492,6 +501,34 @@ class ConfigHelper():
                     return [ False, "Value is a %s, format %s" % (value_type, "192.168.5.1") ]
             except:
                 return [ False, "Value is a %s, format %s" % (value_type, "192.168.5.1") ]
+
+        if value_type == "ip_mask":
+            try:
+                count = 0
+                for subip in value.split('.'):
+                    count += 1
+                    if int(subip) > 255:
+                        return [ False, "Value is a %s, format %s" % (value_type, "255.255.255.0") ]
+                if count == 4:
+                    return [ True , "" ]
+                else:
+                    return [ False, "Value is a %s, format %s" % (value_type, "255.255.255.0") ]
+            except:
+                return [ False, "Value is a %s, format %s" % (value_type, "255.255.255.0") ]
+
+        if value_type == "ip_prefix":
+            try:
+                count = 0
+                for subip in value.split('.'):
+                    count += 1
+                    if int(subip) > 255:
+                        return [ False, "Value is a %s, format %s" % (value_type, "192.168.5") ]
+                if count == 3:
+                    return [ True , "" ]
+                else:
+                    return [ False, "Value is a %s, format %s" % (value_type, "192.168.5") ]
+            except:
+                return [ False, "Value is a %s, format %s" % (value_type, "192.168.5") ]
 
         return [ True, "" ]
     
